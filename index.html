@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR-сканер — самый простой</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #video { width: 100%; max-width: 480px; border-radius: 12px; }
+    #result { margin-top: 16px; font-size: 16px; }
+    #overlay { position: absolute; inset: 0; pointer-events: none; }
+    .wrap { position: relative; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>Сканируем QR</h1>
+
+  <div class="wrap">
+    <video id="video" muted playsinline></video>
+    <div id="overlay"></div>
+  </div>
+
+  <div id="result">Наведите камеру на QR-код…</div>
+
+  <script type="module">
+    import QrScanner from './qr-scanner.min.js';
+
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const resultEl = document.getElementById('result');
+
+    // Создаём сканер
+    const qrScanner = new QrScanner(
+      video,
+      onDecode, // success callback
+      {
+        // 1) Стараемся взять заднюю камеру (если не получится — браузер выберет сам)
+        preferredCamera: 'environment',
+
+        // 2) Подсветка области и контура кода — полезно для UX/отладки
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
+        overlay,
+
+        // 3) Возвращать детальный результат (data + cornerPoints)
+        returnDetailedScanResult: true,
+
+        // 4) Не душим частоту сканов. По умолчанию 25, оставим так.
+        // maxScansPerSecond: 25,
+
+        // 5) Ограничим область сканирования для скорости
+        // По умолчанию библиотека и так берёт центр и даунскейлит до ~400x400,
+        // но если нужно — можно подстроить (пример ниже в комментарии).
+        // calculateScanRegion: (video) => {
+        //   const smallest = Math.min(video.videoWidth, video.videoHeight);
+        //   const size = Math.floor(smallest * 0.6); // окно 60% от меньшей стороны
+        //   const x = Math.floor((video.videoWidth - size) / 2);
+        //   const y = Math.floor((video.videoHeight - size) / 2);
+        //   const downScaledSize = 400; // 400х400 — разумный компромисс
+        //   return {
+        //     x, y, width: size, height: size,
+        //     downScaledWidth: downScaledSize, downScaledHeight: downScaledSize
+        //   };
+        // },
+      }
+    );
+
+    // Стартуем сразу. Хочешь — заведи кнопку и вызывай qrScanner.start() по клику.
+    start();
+
+    async function start() {
+      try {
+        await qrScanner.start();
+        resultEl.textContent = 'Камера запущена. Наведите на QR-код.';
+      } catch (e) {
+        resultEl.textContent = 'Не удалось открыть камеру: ' + (e && e.message ? e.message : e);
+      }
+    }
+
+    function onDecode(decoded) {
+      // decoded = { data: '...', cornerPoints: [...] }
+      const text = typeof decoded === 'string' ? decoded : decoded.data;
+
+      // Останавливаем, чтобы не штамповало дубликаты
+      qrScanner.stop();
+
+      // Делаем кликабельной ссылкой только валидный http/https
+      let url;
+      try { url = new URL(text); } catch { /* не URL */ }
+      if (url && (url.protocol === 'http:' || url.protocol === 'https:')) {
+        resultEl.innerHTML = `Найдено: <a href="${url.href}" target="_blank" rel="noopener noreferrer">${url.href}</a>`;
+      } else {
+        resultEl.textContent = 'Найдено: ' + text;
+      }
+    }
+
+    // На всякий: выключаем сканер при уходе со страницы
+    window.addEventListener('pagehide', () => qrScanner.stop());
+  </script>
+</body>
+</html>
