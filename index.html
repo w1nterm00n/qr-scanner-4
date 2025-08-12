@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QR-сканер — самый простой</title>
+  <title>QR-сканер с автосбросом</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; }
-    #video { width: 100%; max-width: 480px; border-radius: 12px; }
-    #result { margin-top: 16px; font-size: 16px; }
-    #overlay { position: absolute; inset: 0; pointer-events: none; }
     .wrap { position: relative; display: inline-block; }
+    #video { width: 100%; max-width: 480px; border-radius: 12px; }
+    #overlay { position: absolute; inset: 0; pointer-events: none; }
+    #result { margin-top: 16px; font-size: 16px; }
+    #countdown { opacity: .7; font-size: 14px; }
+    button { margin-top: 12px; padding: 8px 12px; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -21,80 +23,111 @@
   </div>
 
   <div id="result">Наведите камеру на QR-код…</div>
+  <div id="countdown"></div>
+  <button id="resetBtn" type="button">Очистить сейчас</button>
 
   <script type="module">
-    import QrScanner from './qr-scanner.min.js';
+    import QrScanner from './qr-scanner.min.js'; // положи рядом
+    // рядом же должен лежать qr-scanner-worker.min.js
 
     const video = document.getElementById('video');
     const overlay = document.getElementById('overlay');
     const resultEl = document.getElementById('result');
+    const countdownEl = document.getElementById('countdown');
+    const resetBtn = document.getElementById('resetBtn');
 
-    // Создаём сканер
+    let processing = false;      // чтобы не ловить дубликаты
+    let timerId = null;          // таймер на автосброс
+    let countdownId = null;      // таймер на цифирки
+
     const qrScanner = new QrScanner(
       video,
-      onDecode, // success callback
+      onDecode,
       {
-        // 1) Стараемся взять заднюю камеру (если не получится — браузер выберет сам)
         preferredCamera: 'environment',
-
-        // 2) Подсветка области и контура кода — полезно для UX/отладки
         highlightScanRegion: true,
         highlightCodeOutline: true,
         overlay,
-
-        // 3) Возвращать детальный результат (data + cornerPoints)
-        returnDetailedScanResult: true,
-
-        // 4) Не душим частоту сканов. По умолчанию 25, оставим так.
-        // maxScansPerSecond: 25,
-
-        // 5) Ограничим область сканирования для скорости
-        // По умолчанию библиотека и так берёт центр и даунскейлит до ~400x400,
-        // но если нужно — можно подстроить (пример ниже в комментарии).
-        // calculateScanRegion: (video) => {
-        //   const smallest = Math.min(video.videoWidth, video.videoHeight);
-        //   const size = Math.floor(smallest * 0.6); // окно 60% от меньшей стороны
-        //   const x = Math.floor((video.videoWidth - size) / 2);
-        //   const y = Math.floor((video.videoHeight - size) / 2);
-        //   const downScaledSize = 400; // 400х400 — разумный компромисс
-        //   return {
-        //     x, y, width: size, height: size,
-        //     downScaledWidth: downScaledSize, downScaledHeight: downScaledSize
-        //   };
-        // },
+        returnDetailedScanResult: true
       }
     );
 
-    // Стартуем сразу. Хочешь — заведи кнопку и вызывай qrScanner.start() по клику.
     start();
 
     async function start() {
       try {
         await qrScanner.start();
         resultEl.textContent = 'Камера запущена. Наведите на QR-код.';
+        countdownEl.textContent = '';
       } catch (e) {
-        resultEl.textContent = 'Не удалось открыть камеру: ' + (e && e.message ? e.message : e);
+        resultEl.textContent = 'Не удалось открыть камеру: ' + (e?.message || e);
       }
     }
 
     function onDecode(decoded) {
-      // decoded = { data: '...', cornerPoints: [...] }
+      if (processing) return;          // защита от многократных срабатываний
+      processing = true;
+
       const text = typeof decoded === 'string' ? decoded : decoded.data;
 
-      // Останавливаем, чтобы не штамповало дубликаты
-      qrScanner.stop();
+      // стопаем сканер, чтобы не наштамповало одинаковых результатов
+      qrScanner.stop(); // потом просто вызовем start() заново через 5 секунд
 
-      // Делаем кликабельной ссылкой только валидный http/https
+      // выводим результат
       let url;
-      try { url = new URL(text); } catch { /* не URL */ }
+      try { url = new URL(text); } catch {}
       if (url && (url.protocol === 'http:' || url.protocol === 'https:')) {
         resultEl.innerHTML = `Найдено: <a href="${url.href}" target="_blank" rel="noopener noreferrer">${url.href}</a>`;
       } else {
         resultEl.textContent = 'Найдено: ' + text;
       }
+
+      // запускаем обратный отсчёт и автосброс
+      startCountdownAndReset(5);
     }
 
-    // На всякий: выключаем сканер при уходе со страницы
+    function startCountdownAndReset(seconds) {
+      // чистим предыдущие таймеры на всякий
+      clearTimeout(timerId);
+      clearInterval(countdownId);
+
+      let left = seconds;
+      countdownEl.textContent = `Сканер перезапустится через ${left} сек.`;
+      countdownId = setInterval(() => {
+        left -= 1;
+        if (left <= 0) {
+          clearInterval(countdownId);
+          countdownEl.textContent = '';
+        } else {
+          countdownEl.textContent = `Сканер перезапустится через ${left} сек.`;
+        }
+      }, 1000);
+
+      timerId = setTimeout(async () => {
+        // очищаем вывод
+        resultEl.textContent = 'Готово. Наведите на следующий QR-код…';
+        processing = false;
+        try {
+          await qrScanner.start(); // обычный «ресюм» через start()
+        } catch (e) {
+          resultEl.textContent = 'Не удалось перезапустить сканер: ' + (e?.message || e);
+        }
+      }, seconds * 1000);
+    }
+
+    // Кнопка для ручного сброса без ожидания 5 сек
+    resetBtn.addEventListener('click', async () => {
+      clearTimeout(timerId);
+      clearInterval(countdownId);
+      countdownEl.textContent = '';
+      resultEl.textContent = 'Готово. Наведите на следующий QR-код…';
+      processing = false;
+      try { await qrScanner.start(); } catch (e) {
+        resultEl.textContent = 'Не удалось перезапустить сканер: ' + (e?.message || e);
+      }
+    });
+
+    // На всякий случай выключим сканер при уходе со страницы
     window.addEventListener('pagehide', () => qrScanner.stop());
   </script>
 </body>
