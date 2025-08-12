@@ -25,6 +25,7 @@
   <div id="result">Наведите камеру на QR-код…</div>
   <div id="countdown"></div>
   <button id="resetBtn" type="button">Очистить сейчас</button>
+  <div id="result"></div>
 
   <script type="module">
     import QrScanner from './qr-scanner.min.js'; // положи рядом
@@ -78,6 +79,25 @@
       try { url = new URL(text); } catch {}
       if (url && (url.protocol === 'http:' || url.protocol === 'https:')) {
         resultEl.innerHTML = `Найдено: <a href="${url.href}" target="_blank" rel="noopener noreferrer">${url.href}</a>`;
+        //!!!!!!!!! Тут сделать запрос на сервак
+        fetch(`http://192.168.50.183:80/run-parsing-check?invoice_link=${encodeURIComponent(url.href)}`, {
+                method: 'GET',
+                // headers: {
+                //     'invoice-link': encodeURIComponent(decodedText)
+                // }
+            })
+            .then(response => {
+                switch (response.status) {
+                    case 200:
+                        document.getElementById('result').innerHTML += `<div style="color:green;">Success</div>`;
+                        break;
+                    default:
+                        document.getElementById('result').innerHTML += `<div style="color:red;">Failed</div>`;
+                        break;
+                }
+                return response.text();
+            })
+
       } else {
         resultEl.textContent = 'Найдено: ' + text;
       }
