@@ -87,7 +87,9 @@
                 // }
             })
             .then(response => {
-              document.getElementById('result').innerHTML += `<div style="color:red;"> Response: ${response} </div>`;
+              if (!response.ok){
+                document.getElementById('result').innerHTML += `<div style="color:red;"> Response: ${response} </div>`;
+              }
                 switch (response.status) {
                     case 200:
                         document.getElementById('result').innerHTML += `<div style="color:green;">Success</div>`;
