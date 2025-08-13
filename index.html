@@ -98,6 +98,10 @@
                 }
                 return response.text();
             })
+            .catch(error => {
+                document.getElementById('result').innerHTML += `<div style="color:red;">Ошибка запроса: ${error.message}</div>`;
+                console.error('Fetch error:', error);
+            });
 
       } else {
         resultEl.textContent = 'Найдено: ' + text;
